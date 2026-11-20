@@ -1,0 +1,51 @@
+name: practice-test
+# Practice only, made-up data. Runs the read-only listing tool as an ordinary user under Windows PowerShell 5.1 against a made-up tree with planted test cases.
+on: workflow_dispatch
+jobs:
+  r:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults: { run: { shell: powershell } }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ordinary user, planted tree, running items, then runs as the ordinary user
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          (Get-FileHash tool\Collect-T5ReadOnly.ps1).Hash
+          $plain=(-join ((48..57)+(65..90)+(97..122) | Get-Random -Count 24 | % {[char]$_}))+'!aA1'
+          $pw=ConvertTo-SecureString $plain -AsPlainText -Force
+          New-LocalUser -Name t5prac -Password $pw -PasswordNeverExpires | Out-Null
+          & test\plant.ps1
+          New-Item -ItemType Directory -Force C:\T5Run | Out-Null; Copy-Item tool\Collect-T5ReadOnly.ps1 C:\T5Run\
+          icacls C:\T5P /grant 't5prac:(OI)(CI)RX' /T | Out-Null; icacls C:\T5Run /grant 't5prac:(OI)(CI)M' /T | Out-Null
+          Copy-Item C:\Windows\System32\PING.EXE C:\T5P\postgres.exe
+          $fake=Start-Process C:\T5P\postgres.exe -ArgumentList '-n','3000','127.0.0.1' -PassThru -WindowStyle Hidden; 'fake postgres pid '+$fake.Id
+          Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile','-Command','$l=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,55432);$l.Start();Start-Sleep 3000'
+          sc.exe create pgfake_postgresql binPath= 'C:\T5P\postgres.exe -D C:\made-up' start= demand | Out-Null
+          schtasks /Create /TN pgfake_postgres_task /TR 'C:\T5P\postgres.exe -n 1 127.0.0.1' /SC ONCE /ST 23:59 /F | Out-Null
+          Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile','-Command','$f=[IO.File]::Open(''C:\T5P\root\locked.txt'',''Open'',''Read'',''None'');Start-Sleep 3000'
+          Start-Sleep 5
+          Get-NetTCPConnection -State Listen | ? LocalPort -eq 55432 | % { 'listener up, owner '+$_.OwningProcess }
+          Get-ChildItem -LiteralPath C:\T5P\root -Recurse -Force | % { $_.FullName }
+          $c=New-Object PSCredential('t5prac',$pw)
+          $cases=[ordered]@{
+            'clean'=@('-InventoryRoots','C:\T5P\root','-AbsentPaths','C:\T5P\leftover_dir,C:\T5P\leftover_dir\,C:\T5P\never_existed,C:\T5P\root\sub\deep\leftover.dat','-OutputFolder','C:\T5Run\out-clean','-NamePatterns','postgres,55432')
+            'out-exists'=@('-InventoryRoots','C:\T5P\root','-OutputFolder','C:\T5P\out_exists','-NamePatterns','postgres')
+            'missing-root'=@('-InventoryRoots','C:\T5P\no_such_root','-OutputFolder','C:\T5Run\out-missing','-NamePatterns','postgres')
+          }
+          foreach ($k in $cases.Keys) {
+            $before=(Get-ChildItem C:\T5P -Recurse -Force | % { $_.FullName+'|'+$_.Length+'|'+$_.LastWriteTimeUtc.Ticks }) -join "`n"
+            $a=@('-NoProfile','-ExecutionPolicy','Bypass','-File','C:\T5Run\Collect-T5ReadOnly.ps1')
+            $argl=$a+$cases[$k] | % { if ($_ -match ',') { '"'+$_+'"' } else { $_ } }
+            if ($k -eq 'clean') { $argl=@('-NoProfile','-ExecutionPolicy','Bypass','-Command','& C:\T5Run\Collect-T5ReadOnly.ps1 -InventoryRoots C:\T5P\root -AbsentPaths C:\T5P\leftover_dir,C:\T5P\leftover_dir\,C:\T5P\never_existed,C:\T5P\root\sub\deep\leftover.dat -OutputFolder C:\T5Run\out-clean -NamePatterns postgres,55432') }
+            $t=[Diagnostics.Stopwatch]::StartNew()
+            $p=Start-Process powershell.exe -Credential $c -LoadUserProfile -PassThru -Wait -WorkingDirectory C:\T5Run -RedirectStandardOutput "C:\T5Run\$k.txt" -RedirectStandardError "C:\T5Run\$k.err.txt" -ArgumentList $argl
+            "===== $k (exit $($p.ExitCode), $([int]$t.Elapsed.TotalSeconds) s)"; Get-Content "C:\T5Run\$k.txt"; 'STDERR:'; Get-Content "C:\T5Run\$k.err.txt" | Select-Object -First 8
+            $after=(Get-ChildItem C:\T5P -Recurse -Force | % { $_.FullName+'|'+$_.Length+'|'+$_.LastWriteTimeUtc.Ticks }) -join "`n"
+            'planted tree unchanged: '+($before -ceq $after)
+          }
+          foreach ($d in Get-ChildItem C:\T5Run -Directory) { '##### '+$d.Name; foreach ($f in Get-ChildItem $d.FullName -File) { '--- '+$f.Name+' '+$f.Length+' '+(Get-FileHash $f.FullName).Hash.ToLower(); $b=[IO.File]::ReadAllBytes($f.FullName); 'bom='+($b.Length -ge 3 -and $b[0] -eq 239)+' cr='+(@($b | ? { $_ -eq 13 }).Count); Get-Content $f.FullName -Encoding UTF8 } }
+          '##### independent truth for comparison'
+          Get-ChildItem C:\T5P\root -Recurse -Force -File | % { $_.FullName+' '+$_.Length+' '+(Get-FileHash -LiteralPath $_.FullName -ErrorAction SilentlyContinue).Hash.ToLower() }
+          Get-Item C:\T5P\root\marked.txt -Stream * | % { 'stream '+$_.Stream+' '+$_.Length }
+          fsutil hardlink list C:\T5P\root\hard_a.txt
