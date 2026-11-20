@@ -46,6 +46,14 @@ jobs:
             'planted tree unchanged: '+($before -ceq $after)
           }
           foreach ($d in Get-ChildItem C:\T5Run -Directory) { '##### '+$d.Name; foreach ($f in Get-ChildItem $d.FullName -File) { '--- '+$f.Name+' '+$f.Length+' '+(Get-FileHash $f.FullName).Hash.ToLower(); $b=[IO.File]::ReadAllBytes($f.FullName); 'bom='+($b.Length -ge 3 -and $b[0] -eq 239)+' cr='+(@($b | ? { $_ -eq 13 }).Count); Get-Content $f.FullName -Encoding UTF8 } }
+          '##### admin run (elevated, same tool, same planted tree)'
+          $before=(Get-ChildItem C:\T5P -Recurse -Force | % { $_.FullName+'|'+$_.Length+'|'+$_.LastWriteTimeUtc.Ticks }) -join "`n"
+          $t=[Diagnostics.Stopwatch]::StartNew()
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command '& C:\T5Run\Collect-T5ReadOnly.ps1 -InventoryRoots C:\T5P\root -AbsentPaths C:\T5P\leftover_dir,C:\T5P\never_existed -OutputFolder C:\T5Admin\out-admin -NamePatterns postgres,55432'
+          "===== admin (exit $LASTEXITCODE, $([int]$t.Elapsed.TotalSeconds) s)"
+          $after=(Get-ChildItem C:\T5P -Recurse -Force | % { $_.FullName+'|'+$_.Length+'|'+$_.LastWriteTimeUtc.Ticks }) -join "`n"
+          'planted tree unchanged: '+($before -ceq $after)
+          foreach ($f in Get-ChildItem C:\T5Admin\out-admin -File) { '--- '+$f.Name+' '+$f.Length+' '+(Get-FileHash $f.FullName).Hash.ToLower(); Get-Content $f.FullName -Encoding UTF8 | ? { $_ -notmatch '^scheduled_task\t\\Microsoft' } }
           '##### task visibility as the ordinary user'
           $q=Start-Process powershell.exe -Credential $c -LoadUserProfile -PassThru -Wait -WorkingDirectory C:\T5Run -RedirectStandardOutput C:\T5Run\taskprobe.txt -RedirectStandardError C:\T5Run\taskprobe.err.txt -ArgumentList @('-NoProfile','-Command',"'user sees task: '+[bool](Get-ScheduledTask -TaskName pgfake_postgres_task -ErrorAction SilentlyContinue)+'; user task total: '+@(Get-ScheduledTask).Count")
           Get-Content C:\T5Run\taskprobe.txt; Get-Content C:\T5Run\taskprobe.err.txt | Select-Object -First 4
