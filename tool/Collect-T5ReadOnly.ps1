@@ -169,7 +169,7 @@ function Get-FileSha256Hex {
             $TargetPath,
             [System.IO.FileMode]::Open,
             [System.IO.FileAccess]::Read,
-            [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete
+            ([System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete)
         )
         try {
             $hashBytes = $sha.ComputeHash($fs)
@@ -643,9 +643,21 @@ try {
         try {
             $actionList = New-Object System.Collections.Generic.List[string]
             foreach ($act in @($t.Actions)) {
-                $exec = [string]$act.Execute
-                $actArgs = [string]$act.Arguments
-                $actionList.Add(("$exec $actArgs").Trim())
+                if ($act.PSObject.Properties['Execute']) {
+                    $exec = [string]$act.Execute
+                    $actArgs = if ($act.PSObject.Properties['Arguments']) { [string]$act.Arguments } else { '' }
+                    $actionList.Add(("$exec $actArgs").Trim())
+                }
+                else {
+                    $actType = if ($act.PSObject.Properties['ActionType']) { [string]$act.ActionType } else { $act.GetType().Name }
+                    $clsId = if ($act.PSObject.Properties['ClassId']) { [string]$act.ClassId } else { '' }
+                    if ($clsId) {
+                        $actionList.Add("$actType ClassId=$clsId")
+                    }
+                    else {
+                        $actionList.Add($actType)
+                    }
+                }
             }
             $tActions = $actionList -join ' || '
         }
