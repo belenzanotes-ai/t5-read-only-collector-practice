@@ -22,7 +22,8 @@ jobs:
           $fake=Start-Process C:\T5P\postgres.exe -ArgumentList '-n','3000','127.0.0.1' -PassThru -WindowStyle Hidden; 'fake postgres pid '+$fake.Id
           Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile','-Command','$l=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,55432);$l.Start();Start-Sleep 3000'
           sc.exe create pgfake_postgresql binPath= 'C:\T5P\postgres.exe -D C:\made-up' start= demand | Out-Null
-          schtasks /Create /TN pgfake_postgres_task /TR 'C:\T5P\postgres.exe -n 1 127.0.0.1' /SC ONCE /ST 23:59 /F | Out-Null
+          schtasks /Create /TN pgfake_postgres_task /TR 'C:\T5P\postgres.exe -n 1 127.0.0.1' /SC ONCE /ST 23:59 /F 2>&1 | % { 'task create: '+$_ }
+          'admin sees task: '+[bool](Get-ScheduledTask -TaskName pgfake_postgres_task -ErrorAction SilentlyContinue)+'; admin task total: '+@(Get-ScheduledTask).Count
           Start-Process powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile','-Command','$f=[IO.File]::Open(''C:\T5P\root\locked.txt'',''Open'',''Read'',''None'');Start-Sleep 3000'
           Start-Sleep 5
           Get-NetTCPConnection -State Listen | ? LocalPort -eq 55432 | % { 'listener up, owner '+$_.OwningProcess }
@@ -45,6 +46,9 @@ jobs:
             'planted tree unchanged: '+($before -ceq $after)
           }
           foreach ($d in Get-ChildItem C:\T5Run -Directory) { '##### '+$d.Name; foreach ($f in Get-ChildItem $d.FullName -File) { '--- '+$f.Name+' '+$f.Length+' '+(Get-FileHash $f.FullName).Hash.ToLower(); $b=[IO.File]::ReadAllBytes($f.FullName); 'bom='+($b.Length -ge 3 -and $b[0] -eq 239)+' cr='+(@($b | ? { $_ -eq 13 }).Count); Get-Content $f.FullName -Encoding UTF8 } }
+          '##### task visibility as the ordinary user'
+          $q=Start-Process powershell.exe -Credential $c -LoadUserProfile -PassThru -Wait -WorkingDirectory C:\T5Run -RedirectStandardOutput C:\T5Run\taskprobe.txt -RedirectStandardError C:\T5Run\taskprobe.err.txt -ArgumentList @('-NoProfile','-Command',"'user sees task: '+[bool](Get-ScheduledTask -TaskName pgfake_postgres_task -ErrorAction SilentlyContinue)+'; user task total: '+@(Get-ScheduledTask).Count")
+          Get-Content C:\T5Run\taskprobe.txt; Get-Content C:\T5Run\taskprobe.err.txt | Select-Object -First 4
           '##### independent truth for comparison'
           Get-ChildItem C:\T5P\root -Recurse -Force -File | % { $_.FullName+' '+$_.Length+' '+$(try { (Get-FileHash -LiteralPath $_.FullName -ErrorAction Stop).Hash.ToLower() } catch { 'unreadable: '+$_.Exception.Message }) }
           Get-Item C:\T5P\root\marked.txt -Stream * | % { 'stream '+$_.Stream+' '+$_.Length }
