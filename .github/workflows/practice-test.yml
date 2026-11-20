@@ -46,6 +46,6 @@ jobs:
           }
           foreach ($d in Get-ChildItem C:\T5Run -Directory) { '##### '+$d.Name; foreach ($f in Get-ChildItem $d.FullName -File) { '--- '+$f.Name+' '+$f.Length+' '+(Get-FileHash $f.FullName).Hash.ToLower(); $b=[IO.File]::ReadAllBytes($f.FullName); 'bom='+($b.Length -ge 3 -and $b[0] -eq 239)+' cr='+(@($b | ? { $_ -eq 13 }).Count); Get-Content $f.FullName -Encoding UTF8 } }
           '##### independent truth for comparison'
-          Get-ChildItem C:\T5P\root -Recurse -Force -File | % { $_.FullName+' '+$_.Length+' '+(Get-FileHash -LiteralPath $_.FullName -ErrorAction SilentlyContinue).Hash.ToLower() }
+          Get-ChildItem C:\T5P\root -Recurse -Force -File | % { $_.FullName+' '+$_.Length+' '+$(try { (Get-FileHash -LiteralPath $_.FullName -ErrorAction Stop).Hash.ToLower() } catch { 'unreadable: '+$_.Exception.Message }) }
           Get-Item C:\T5P\root\marked.txt -Stream * | % { 'stream '+$_.Stream+' '+$_.Length }
           fsutil hardlink list C:\T5P\root\hard_a.txt
