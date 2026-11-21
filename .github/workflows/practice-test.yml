@@ -54,6 +54,23 @@ jobs:
           $after=(Get-ChildItem C:\T5P -Recurse -Force | % { $_.FullName+'|'+$_.Length+'|'+$_.LastWriteTimeUtc.Ticks }) -join "`n"
           'planted tree unchanged: '+($before -ceq $after)
           foreach ($f in Get-ChildItem C:\T5Admin\out-admin -File) { '--- '+$f.Name+' '+$f.Length+' '+(Get-FileHash $f.FullName).Hash.ToLower(); Get-Content $f.FullName -Encoding UTF8 | ? { $_ -notmatch '^scheduled_task\t\\Microsoft' } }
+          '##### step sheet v0.2 exact commands (administrator, LF copy as Spiro would save it)'
+          New-Item -ItemType Directory C:\T5Tool | Out-Null
+          $src=[IO.File]::ReadAllText("$env:GITHUB_WORKSPACE\tool\Collect-T5ReadOnly.ps1") -replace "`r`n","`n"
+          [IO.File]::WriteAllBytes('C:\T5Tool\Collect-T5ReadOnly.ps1',[Text.UTF8Encoding]::new($false).GetBytes($src))
+          'step 4 fingerprint: '+(Get-FileHash -LiteralPath "C:\T5Tool\Collect-T5ReadOnly.ps1" -Algorithm SHA256).Hash
+          $before=(Get-ChildItem C:\T5P -Recurse -Force | % { $_.FullName+'|'+$_.Length+'|'+$_.LastWriteTimeUtc.Ticks }) -join "`n"
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'C:\T5Tool\Collect-T5ReadOnly.ps1' -InventoryRoots @('C:\T5P\root') -AbsentPaths @('C:\T5P\leftover_dir','C:\T5P\never_existed') -OutputFolder 'C:\T5Sheet\out' -NamePatterns @('postgres','55432')"
+          "===== sheet (exit $LASTEXITCODE)"
+          $after=(Get-ChildItem C:\T5P -Recurse -Force | % { $_.FullName+'|'+$_.Length+'|'+$_.LastWriteTimeUtc.Ticks }) -join "`n"
+          'planted tree unchanged: '+($before -ceq $after)
+          foreach ($f in Get-ChildItem C:\T5Sheet\out -File) { '--- '+$f.Name+' '+$f.Length+' '+(Get-FileHash $f.FullName).Hash.ToLower() }
+          Get-Content C:\T5Sheet\out\absent.tsv; Get-Content C:\T5Sheet\out\running.tsv | ? { $_ -match '^summary_total|pgfake' }
+          '--- second run into the same output folder (must refuse)'
+          $eap=$ErrorActionPreference; $ErrorActionPreference='Continue'
+          try { powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& 'C:\T5Tool\Collect-T5ReadOnly.ps1' -InventoryRoots @('C:\T5P\root') -AbsentPaths @() -OutputFolder 'C:\T5Sheet\out' -NamePatterns @('postgres')" 2>&1 | % { "$_" } | Select-Object -First 2 } catch { 'caught: '+$_.Exception.Message }
+          $rc=$LASTEXITCODE; $ErrorActionPreference=$eap
+          "===== sheet-repeat (exit $rc)"
           '##### task visibility as the ordinary user'
           $q=Start-Process powershell.exe -Credential $c -LoadUserProfile -PassThru -Wait -WorkingDirectory C:\T5Run -RedirectStandardOutput C:\T5Run\taskprobe.txt -RedirectStandardError C:\T5Run\taskprobe.err.txt -ArgumentList @('-NoProfile','-Command',"'user sees task: '+[bool](Get-ScheduledTask -TaskName pgfake_postgres_task -ErrorAction SilentlyContinue)+'; user task total: '+@(Get-ScheduledTask).Count")
           Get-Content C:\T5Run\taskprobe.txt; Get-Content C:\T5Run\taskprobe.err.txt | Select-Object -First 4
