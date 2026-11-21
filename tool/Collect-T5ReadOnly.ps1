@@ -681,12 +681,14 @@ catch {
     $runningRows.Add((@('scheduled_task_scan_error', '', '', '', '', (Sanitize-Field $_.Exception.Message)) -join "`t"))
 }
 
+$runAcct = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+$runElev = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $runningRows.Add((@(
     'summary_total',
     'inspected_counts',
     '',
     '',
-    "processes=$procTotal;listening_ports=$portTotal;services=$svcTotal;scheduled_tasks=$taskTotal",
+    "processes=$procTotal;listening_ports=$portTotal;services=$svcTotal;scheduled_tasks=$taskTotal;account=$runAcct;elevated=$runElev",
     ''
 ) -join "`t"))
 
